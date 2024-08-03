@@ -1,0 +1,55 @@
+//Fetching Image Collection of Temprature
+var temcol = ee.ImageCollection("ECMWF/ERA5/MONTHLY")
+             .select('mean_2m_air_temperature');
+             
+//Fetching Countries' boundary feature collection
+var Boundary = ee.FeatureCollection("FAO/GAUL/2015/level0");
+
+//Name of country of interest
+//Iran Fao Name:'Iran  (Islamic Republic of)'
+//UK Fao Name:'U.K. of Great Britain and Northern Ireland'
+var Country_name = 'U.K. of Great Britain and Northern Ireland';
+
+var roi = Boundary.filter(ee.Filter.eq('ADM0_NAME',Country_name));
+
+
+var sdate = '1980-01-01';
+var edate = '2024-01-31';
+
+var imgCol = temcol.filterDate(sdate,edate).filterBounds(roi).select('mean_2m_air_temperature')
+                    .map(function(img){
+                      return img.subtract(273.15).copyProperties(img, ['system:time_start']);
+                    }).map(function(img){
+                              var Year = ee.Date(img.get('system:time_start')).get('year');
+                              var Month = ee.Date(img.get('system:time_start')).get('month');
+                              return img.set('Year', Year).set('Month',Month);
+                        
+                      });
+
+// Making List to put Images in various Year and Month 
+var start = ee.Number(1980);
+var end = ee.Number(2023);
+var year = ee.List.sequence(start,end);
+var month = ee.List.sequence(1,12);
+
+// Putting Images in corresponding Year and Month
+
+var precipitation_monthly = ee.ImageCollection.fromImages(
+  year.map(function(y){
+    return month.map(function(m){
+      return imgCol.filter(ee.Filter.calendarRange(y,y,'year')).filter(ee.Filter.calendarRange(m,m,'month')).sum()
+      .set('Year',y).set('Month',m).set('system:time_start',ee.Date.fromYMD(y, m, 1));
+    });
+  }).flatten()
+  );
+  
+  print('Monthly Precipitation:',precipitation_monthly);
+  
+var chart = Chart.image.series({
+    imageCollection:precipitation_monthly,
+    region:roi,
+    reducer:ee.Reducer.mean(),
+    xProperty:'system:time_start'
+    });
+
+print(chart);
